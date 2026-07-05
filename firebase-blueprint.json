@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "user_profiles": {
+      "title": "User Profile",
+      "description": "Information about registered users of Auto Edit Manga.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The unique user ID matching request.auth.uid"
+        },
+        "email": {
+          "type": "string",
+          "description": "The verified email of the user"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the user"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of profile creation"
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "manga_projects": {
+      "title": "Manga Project",
+      "description": "A saved manga recap project containing panels and configurations.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique project identifier"
+        },
+        "userId": {
+          "type": "string",
+          "description": "User identifier who created this project"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the manga recap project"
+        },
+        "globalScript": {
+          "type": "string",
+          "description": "The full voiceover script text for this project"
+        },
+        "panelsJson": {
+          "type": "string",
+          "description": "JSON serialized string of the manga panels array"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of modification"
+        }
+      },
+      "required": ["id", "userId", "name", "globalScript", "panelsJson"]
+    }
+  },
+  "firestore": {
+    "user_profiles/{userId}": {
+      "schema": "user_profiles",
+      "description": "The profile of an authenticated user"
+    },
+    "manga_projects/{projectId}": {
+      "schema": "manga_projects",
+      "description": "The manga story board projects saved by users"
+    }
+  }
+}

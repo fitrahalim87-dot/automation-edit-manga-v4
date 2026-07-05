@@ -1,0 +1,101 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net: Default deny everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Mandate that the email is verified to prevent identity spoofing
+    function isVerifiedUser() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- VALIDATION BLUEPRINTS (Anti-Update-Gap) ---
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt']) &&
+        data.keys().size() == 4 &&
+        data.uid is string && data.uid.size() <= 128 &&
+        data.uid == request.auth.uid &&
+        data.email is string && data.email.size() <= 256 &&
+        data.email == request.auth.token.email &&
+        data.displayName is string && data.displayName.size() <= 128 &&
+        data.createdAt == request.time;
+    }
+
+    function isValidMangaProject(data) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'globalScript', 'panelsJson', 'createdAt', 'updatedAt']) &&
+        data.keys().size() == 7 &&
+        data.id is string && data.id.size() <= 128 &&
+        data.userId is string && data.userId.size() <= 128 &&
+        data.userId == request.auth.uid &&
+        data.name is string && data.name.size() <= 128 &&
+        data.globalScript is string && data.globalScript.size() <= 50000 &&
+        data.panelsJson is string && data.panelsJson.size() <= 200000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // --- USER PROFILE RULES ---
+    match /user_profiles/{userId} {
+      allow get: if isVerifiedUser() && userId == request.auth.uid;
+      allow create: if isVerifiedUser() && userId == request.auth.uid && isValidUserProfile(incoming());
+      allow update: if isVerifiedUser() && userId == request.auth.uid &&
+        incoming().keys().hasAll(['uid', 'email', 'displayName', 'createdAt']) &&
+        incoming().keys().size() == 4 &&
+        incoming().uid == existing().uid &&
+        incoming().email == existing().email &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().displayName is string && incoming().displayName.size() <= 128 &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName']);
+      allow delete: if false; // Profiles are immortal
+    }
+
+    // --- MANGA PROJECTS RULES ---
+    match /manga_projects/{projectId} {
+      // Secure list query enforcer (prevents query scraping)
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow get: if isSignedIn() && isValidId(projectId) && resource.data.userId == request.auth.uid;
+      
+      allow create: if isVerifiedUser() && isValidId(projectId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isValidMangaProject(incoming());
+        
+      allow update: if isVerifiedUser() && isValidId(projectId) &&
+        existing().userId == request.auth.uid &&
+        incoming().userId == existing().userId &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        isValidMangaProject(incoming()) && (
+          // Whitelisting field edits (Action: Edit details)
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'globalScript', 'panelsJson', 'updatedAt'])
+        );
+        
+      allow delete: if isVerifiedUser() && isValidId(projectId) &&
+        existing().userId == request.auth.uid;
+    }
+  }
+}

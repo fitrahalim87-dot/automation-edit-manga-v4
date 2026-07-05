@@ -1,0 +1,10 @@
+{
+  "name": "Automation manga recap v4",
+  "description": "An automated studio to create high-quality manga recap videos with voiceovers, transitions, and subtitles.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
