@@ -262,6 +262,23 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({
     localStorage.setItem("manga_recap_bg_style", bgStyle);
   }, [bgStyle]);
 
+  // Video format (codec) and quality (bitrate) states
+  const [videoCodec, setVideoCodec] = useState<string>(() => {
+    return localStorage.getItem("manga_recap_video_codec") || "mp4-high";
+  });
+
+  const [videoBitrate, setVideoBitrate] = useState<string>(() => {
+    return localStorage.getItem("manga_recap_video_bitrate") || "2mbps";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("manga_recap_video_codec", videoCodec);
+  }, [videoCodec]);
+
+  useEffect(() => {
+    localStorage.setItem("manga_recap_video_bitrate", videoBitrate);
+  }, [videoBitrate]);
+
   // Export recording states
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -1401,39 +1418,108 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({
       });
     }
 
-    // Detect browser capabilities and prioritize MP4 format with high-compatibility H264/AAC configs first
-    const candidateMimes = [
-      "video/mp4;codecs=h264,aac",
-      "video/mp4;codecs=h264",
-      "video/mp4",
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm"
-    ];
-
-    let chosenMime = "";
-    for (const mime of candidateMimes) {
-      if (typeof MediaRecorder !== "undefined" && (MediaRecorder as any).isTypeSupported && (MediaRecorder as any).isTypeSupported(mime)) {
-        chosenMime = mime;
-        break;
+    // Dynamically choose codec from user preference
+    const getMimeForCodec = (codec: string): string => {
+      if (typeof MediaRecorder === "undefined" || !(MediaRecorder as any).isTypeSupported) {
+        return "";
       }
-    }
+
+      let candidates: string[] = [];
+      if (codec === "mp4-high") {
+        candidates = [
+          "video/mp4;codecs=avc1.640028,mp4a.40.2",
+          "video/mp4;codecs=avc1.640028",
+          "video/mp4;codecs=h264,aac",
+          "video/mp4;codecs=h264",
+          "video/mp4"
+        ];
+      } else if (codec === "mp4-baseline") {
+        candidates = [
+          "video/mp4;codecs=avc1.42001E,mp4a.40.2",
+          "video/mp4;codecs=avc1.42001E",
+          "video/mp4;codecs=h264,aac",
+          "video/mp4;codecs=h264",
+          "video/mp4"
+        ];
+      } else if (codec === "mp4-auto") {
+        candidates = [
+          "video/mp4;codecs=h264,aac",
+          "video/mp4;codecs=h264",
+          "video/mp4"
+        ];
+      } else if (codec === "webm-vp9") {
+        candidates = [
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=vp9",
+          "video/webm"
+        ];
+      } else if (codec === "webm-vp8") {
+        candidates = [
+          "video/webm;codecs=vp8,opus",
+          "video/webm;codecs=vp8",
+          "video/webm"
+        ];
+      } else {
+        // Auto: prioritize MP4 high profile, fall back to anything
+        candidates = [
+          "video/mp4;codecs=avc1.640028,mp4a.40.2",
+          "video/mp4;codecs=avc1.640028",
+          "video/mp4;codecs=h264,aac",
+          "video/mp4;codecs=h264",
+          "video/mp4",
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=vp8,opus",
+          "video/webm"
+        ];
+      }
+
+      // Find first supported
+      for (const mime of candidates) {
+        if ((MediaRecorder as any).isTypeSupported(mime)) {
+          return mime;
+        }
+      }
+
+      // Ultimate fallback
+      const fallbackMimes = [
+        "video/mp4",
+        "video/webm",
+        ""
+      ];
+      for (const mime of fallbackMimes) {
+        if (!mime || (MediaRecorder as any).isTypeSupported(mime)) {
+          return mime;
+        }
+      }
+
+      return "";
+    };
+
+    const getBitrateValue = (bitrate: string): number => {
+      if (bitrate === "6mbps") return 6000000;
+      if (bitrate === "4mbps") return 4000000;
+      return 2000000; // default "2mbps"
+    };
+
+    const chosenMime = getMimeForCodec(videoCodec);
+    const chosenBitrate = getBitrateValue(videoBitrate);
 
     let recorder: MediaRecorder;
     try {
       if (chosenMime) {
         recorder = new MediaRecorder(combinedStream, { 
           mimeType: chosenMime,
-          videoBitsPerSecond: 1350000, // 1.35 Mbps bitrate for highly compact and lightweight video exports (10 mins ~ 100 MB)
+          videoBitsPerSecond: chosenBitrate,
           audioBitsPerSecond: 128000
         });
       } else {
         recorder = new MediaRecorder(combinedStream, {
-          videoBitsPerSecond: 1350000, // 1.35 Mbps
+          videoBitsPerSecond: chosenBitrate,
           audioBitsPerSecond: 128000
         });
       }
     } catch (e) {
+      console.warn("MediaRecorder creation with options failed, falling back to basic recorder:", e);
       recorder = new MediaRecorder(combinedStream);
     }
 
@@ -2550,6 +2636,36 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({
             <Volume2 className="w-3.5 h-3.5" />
             Voice Over Otomatis: {useAutoTTS ? "Aktif" : "Nonaktif"}
           </button>
+
+          {/* Format & Bitrate selectors inspired by Lovable */}
+          <div className="flex flex-wrap items-center gap-2 bg-stone-900/40 p-1 rounded-lg border border-stone-850/60" id="format-bitrate-panel">
+            {/* Format Video Codec */}
+            <select
+              value={videoCodec}
+              onChange={(e) => setVideoCodec(e.target.value)}
+              className="bg-stone-950 border border-stone-850 text-stone-300 text-xs rounded px-2.5 py-1.5 focus:border-cyan-500/50 outline-none cursor-pointer hover:border-stone-700/60 transition-all font-semibold"
+              title="Pilih Format & Kodek Video"
+            >
+              <option value="mp4-high">MP4 · H.264 High (rekomendasi)</option>
+              <option value="mp4-baseline">MP4 · H.264 Baseline (paling kompatibel)</option>
+              <option value="mp4-auto">MP4 · H.264 (auto profile)</option>
+              <option value="webm-vp9">WebM · VP9</option>
+              <option value="webm-vp8">WebM · VP8</option>
+              <option value="auto">Auto (biar browser pilih)</option>
+            </select>
+
+            {/* Bitrate */}
+            <select
+              value={videoBitrate}
+              onChange={(e) => setVideoBitrate(e.target.value)}
+              className="bg-stone-950 border border-stone-850 text-stone-300 text-xs rounded px-2.5 py-1.5 focus:border-cyan-500/50 outline-none cursor-pointer hover:border-stone-700/60 transition-all font-semibold"
+              title="Pilih Kualitas Laju Bit"
+            >
+              <option value="6mbps">Halus · 6 Mbps</option>
+              <option value="4mbps">Seimbang · 4 Mbps</option>
+              <option value="2mbps">Hemat · 2 Mbps</option>
+            </select>
+          </div>
         </div>
 
         {/* Main interactive triggers */}
